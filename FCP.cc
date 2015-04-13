@@ -24,8 +24,7 @@ void RoutingProtocolImpl::forward_FCP(unsigned short src, unsigned short dst) {
 }
 
 //TODO
-//Check Whether the neighbors are alive, the failure links information will be stored on
-//a local map variable through recv()
+//Check Whether the neighbors are alive, the failure links information will be stored 
 multimap<unsigned short, unsigned short> RoutingProtocolImpl::store_failure_neighbors() {
 	int i;
 	multimap<unsigned short, unsigned short> fail_neighbors;
@@ -45,6 +44,7 @@ multimap<unsigned short, unsigned short> RoutingProtocolImpl::store_failure_neig
 /*void RoutingProtocol::updateMap(multimap<unsigned short, unsigned short> fail_links) {
 }*/
 
+//TODO
 //handle the situation when receive a packet with the type FCP
 void RoutingProtocolImpl::recvFCP(unsigned short port, void *packet, unsigned short size) {
 	char *pck = (char *)packet;
@@ -56,54 +56,63 @@ void RoutingProtocolImpl::recvFCP(unsigned short port, void *packet, unsigned sh
 
 	if (nodeVec.find(srcID) == nodeVec.end()) {
 		printf("  This is a new FCP:\n");
-		// add this new linkState
-		FCP newLS;
-		newLS.Node_ID = srcID;
-		newLS.sequence = seq;
-		newLS.update = sys->time();
+		// add this new FCP
+		FCP newFCP;
+		newFCP.Node_ID = srcID;
+		newFCP.sequence = seq;
+		newFCP.update = sys->time();
 
 		// insert the cost in the packet to FCP
 		for (i = 0; i < size - 12; i += 4) {
 			unsigned short nID = ntohs(*(unsigned short*)(pck + 12 + i));
 			unsigned short ncost = ntohs(*(unsigned short*)(pck + 14 + i));
 			printf("\tnode ID: %d, cost: %d\n", nID, ncost);
-			newLS.neighbour.insert(pair<unsigned short, unsigned short>(nID, ncost));
+			newFCP.neighbour.insert(pair<unsigned short, unsigned short>(nID, ncost));
 		}
+		nodeVec.insert(pair<unsigned short, FCP>(srcID, newFCP));
 
-		nodeVec.insert(pair<unsigned short, linkState>(srcID, newLS));
+		// TODO
+		// insert the failure links in the packet to FCP
+
 		dijkstra();
 		sendFCPRecv(port, pck, size);
 	}
 	else if (nodeVec[srcID].sequence < seq) {
-		printf("  Update current LinkState table: (old sequence number: %d; new sequence number: %d)\n", nodeVec[srcID].sequence, seq);
+		printf("  Update current FCP: (old sequence number: %d; new sequence number: %d)\n", nodeVec[srcID].sequence, seq);
 		// update this linkState
-		linkState *ls = &nodeVec[srcID];
-		ls->sequence = seq;
-		ls->neighbour.clear();
-		ls->update = sys->time();
+		FCP *f = &nodeVec[srcID];
+		f->sequence = seq;
+		f->neighbour.clear();
+		f->update = sys->time();
 
 		// insert the cost in the packet to linkState
 		for (i = 0; i < size - 12; i += 4) {
 			unsigned short nID = ntohs(*(unsigned short*)(pck + 12 + i));
 			unsigned short ncost = ntohs(*(unsigned short*)(pck + 14 + i));
 			printf("\tnode ID: %d, cost: %d\n", nID, ncost);
-			ls->neighbour.insert(pair<unsigned short, unsigned short>(nID, ncost));
+			f->neighbour.insert(pair<unsigned short, unsigned short>(nID, ncost));
 		}
+
+		// TODO
+		// insert the failure links in the packet to FCP
+
 		dijkstra();
 		sendFCPRecv(port, pck, size);
 	}
 	else
-		printf("  This is an old LS table. Just ignore it.\n");
+		printf("  This is an old FCP. Just ignore it.\n");
+
 	packet = NULL;
 	delete pck;
 }
 
+//TODO
 //send the received FCP packet
 void RoutingProtocolImpl::sendFCPRecv(unsigned short port, char *packet, unsigned short size) {
 	for (int i = 0; i < num_ports; i++)
 	if (i != port) {
 		char *toSend = (char*)malloc(sizeof(char)* size);
-		*toSend = LS;
+		*toSend = F_C_P;
 		*(unsigned short*)(toSend + 2) = htons(size);
 		*(unsigned short*)(toSend + 4) = *(unsigned short*)(packet + 4);
 		*(unsigned int*)(toSend + 8) = *(unsigned int*)(packet + 8);
@@ -115,18 +124,24 @@ void RoutingProtocolImpl::sendFCPRecv(unsigned short port, char *packet, unsigne
 	}
 }
 
-//send the LS table to all neighbours
+//TODO
+//send FCP portInfo to all neighbours
 void RoutingProtocolImpl::sendFCPPort(){
-	char type = LS;
+	char type = FCP;
 	unsigned short size;
 	unsigned short sourceId = router_id;
 
 	map<unsigned short, unsigned short> portInfo;
+	multimap<unsigned short, unsigned short> failPort;
 
-	//get neighbours
+	//get neighbours and fail ports
 	for (int i = 0; i < num_ports; i++) {
 		if (port_table.at(i).is_alive) {
 			portInfo.insert(pair<unsigned short, unsigned short>(port_table.at(i).neighbor_id, port_table.at(i).cost));
+		}
+		else {
+			failPort.insert(pair<unsigned short, unsigned short>(sourceId, i));
+			port_table.at(i).cost = INFINITY_COST;
 		}
 	}
 
@@ -134,10 +149,13 @@ void RoutingProtocolImpl::sendFCPPort(){
 	mySequence++;
 	size = 12 + (portInfo.size() * 4);
 
+	//TODO
+	//Insert fail ports
+
 	bool printed = false;
 	for (int i = 0; i < num_ports; i++) {
 		if (port_table.at(i).is_alive) {
-			printf("\tSend LS table to port %d.\n", i);
+			printf("\tSend FCP to port %d.\n", i);
 			char * packet = (char *)malloc(sizeof(char)* size);
 			*packet = type;
 			*(short *)(packet + 2) = htons(size);
